@@ -1,0 +1,24 @@
+{
+  "_комментарий": "Шаблон конфигурации MCP-серверов. Скопируйте этот файл в .mcp.json (рядом) и подставьте СВОИ ключи. Реальный .mcp.json в .gitignore — в репозиторий не попадёт.",
+
+  "mcpServers": {
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "ВСТАВЬТЕ_СВОЙ_BRAVE_API_KEY"
+      }
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    },
+    "kinescope": {
+      "type": "http",
+      "url": "https://api.kinescope.io/mcp",
+      "headers": {
+        "Authorization": "Bearer ВСТАВЬТЕ_СВОЙ_KINESCOPE_ТОКЕН"
+      }
+    }
+  }
+}

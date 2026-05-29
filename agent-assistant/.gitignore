@@ -1,0 +1,4 @@
+.mcp.json
+models/ggml-medium.bin
+transcripts/
+.DS_Store
