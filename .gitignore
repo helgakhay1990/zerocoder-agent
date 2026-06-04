@@ -29,6 +29,10 @@ tmp/
 .playwright-mcp/
 .learnings/
 
+# Генерируемые из .md документы (пересобираются скриптом .md_to_docx.py)
+reports/*.docx
+**/reports/*.docx
+
 # ── Артефакты ДЗ (личное, не часть агента) ────────────────────
 homework-card/
 homework-submit/
