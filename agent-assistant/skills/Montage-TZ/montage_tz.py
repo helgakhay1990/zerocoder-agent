@@ -154,6 +154,34 @@ def parse_tc(tc: str) -> float:
     return 0.0  # недостижимо
 
 
+def load_notes(args) -> list[str]:
+    """Собрать заметки автора из --notes (через ';' или перевод строки) и --notes-file."""
+    raw: list[str] = []
+    if args.notes:
+        raw.extend(re.split(r"[;\n]", args.notes))
+    if getattr(args, "notes_file", ""):
+        path = Path(args.notes_file)
+        if not path.exists():
+            die(f"Файл заметок не найден: {path}")
+        raw.extend(path.read_text(encoding="utf-8", errors="ignore").splitlines())
+    return [s.strip() for s in raw if s.strip()]
+
+
+def split_note(note: str) -> tuple[str, str]:
+    """Заметку → (таймкод_для_показа, текст). Если строка начинается с таймкода
+    (35:00 / 1:15:30 / 1h15m), выносим его в колонку тайминга; иначе тайминг пуст.
+    Голые числа таймкодом НЕ считаем (990 — это цена, а не время)."""
+    parts = note.split(maxsplit=1)
+    if len(parts) == 2:
+        token = parts[0].rstrip("—-|:")
+        is_colon = ":" in token and re.fullmatch(r"\d{1,2}(?::\d{2}){1,2}", token)
+        is_suffix = re.fullmatch(r"(?=.*\d)(?:\d+h)?(?:\d+m)?(?:\d+s)?", token)
+        if is_colon or is_suffix:
+            text = parts[1].lstrip("—-|: ").strip()
+            return token, text or note
+    return "", note
+
+
 def parse_windows(spec: str) -> list[tuple[float, float]]:
     """'0:20-0:50,1:15:30-1:40' → [(20.0,50.0),(4530.0,6000.0)] (в секундах)."""
     windows = []
@@ -408,7 +436,8 @@ def shorten(text: str, n: int = 90) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args) -> None:
+def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args, notes=None) -> None:
+    notes = notes or []
     d = dt.date.today().isoformat()
     L = []
     L.append(f"# ТЗ на монтаж — {args.theme} (ЧЕРНОВИК)\n")
@@ -420,6 +449,20 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
     L.append(f"**Окон шеринга экрана отсканировано:** {len(windows)}"
              + ("" if windows else " — ⚠️ окна не заданы, экранный слой пуст"))
     L.append(f"**Собрано:** {d} · модель whisper `{args.whisper_model}`, OCR `{args.ocr_lang}`\n")
+    L.append("---\n")
+
+    # 0. Заявлено автором — высокоуверенная затравка (известные моменты от человека)
+    L.append("## Заявлено автором (высокая уверенность)\n")
+    if notes:
+        L.append("| Тайминг | Заявлено автором |")
+        L.append("|---|---|")
+        for n in notes:
+            tc, text = split_note(n)
+            L.append(f"| {tc or '—'} | {text} |")
+        L.append("\n> Затравка от автора: проверять не нужно, дополнить — нужно. "
+                 "Ниже автоматические находки скрипта.\n")
+    else:
+        L.append("_Автор не указал известных моментов — ниже только авто-находки скрипта._\n")
     L.append("---\n")
 
     # 1. Заблюрить / заменить (экранный слой)
@@ -506,6 +549,11 @@ def main() -> None:
     p.add_argument("--out", default="", help="Путь к выходному .md (по умолчанию reports/)")
     p.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR), help="Папка кэша артефактов")
     p.add_argument("--refresh", action="store_true", help="Игнорировать кэш, пересобрать всё")
+    p.add_argument("--notes", default="",
+                   help="Известные автором моменты (высокая уверенность). Несколько — через ';' "
+                        "или перевод строки. Можно с таймкодом в начале: '35:00 цена 990'")
+    p.add_argument("--notes-file", default="",
+                   help="Файл с заметками автора (по строке на пункт). Объединяется с --notes")
     args = p.parse_args()
 
     preflight(args)
@@ -517,6 +565,10 @@ def main() -> None:
     log(f"📹 Запись: {video.name}")
     duration = probe_duration(video)
     log(f"   длительность: {hms(duration)}")
+
+    notes = load_notes(args)
+    if notes:
+        log(f"📌 Заметок автора (высокая уверенность): {len(notes)}")
 
     windows = parse_windows(args.windows) if args.windows else []
     if not windows:
@@ -538,7 +590,7 @@ def main() -> None:
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     assemble(out_path, video.name if Path(args.source).exists() else f"Kinescope {args.source}",
-             duration, windows, t_found, v_hits, args)
+             duration, windows, t_found, v_hits, args, notes)
     log(f"\n✅ Черновик ТЗ: {out_path}")
     log("   Дальше: проверка video-edit-assistant → сверка с автором → финал.")
 
