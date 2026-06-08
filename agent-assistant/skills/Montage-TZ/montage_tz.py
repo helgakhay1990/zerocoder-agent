@@ -262,8 +262,10 @@ def resolve_source(args, work_dir: Path) -> tuple[Path, str]:
     if chosen is None:
         ordered = sorted(assets, key=lambda a: a.get("file_size", 0))
         chosen = ordered[0] if ordered else None
-    if chosen is None or not chosen.get("url"):
+    if chosen is None or not (chosen.get("download_link") or chosen.get("url")):
         die("В ответе Kinescope нет скачиваемого asset с url.")
+    # download_link — полная выгрузка (s3/storage, attachment); url — плеерный CDN, режет на 200 МиБ
+    dl_url = chosen.get("download_link") or chosen["url"]
     log(f"   качество: {chosen.get('quality')} ({chosen.get('resolution','?')})")
 
     key = video_id
@@ -274,7 +276,7 @@ def resolve_source(args, work_dir: Path) -> tuple[Path, str]:
     log("⬇️  Скачиваю запись (это может занять время)...")
     tmp = out.with_name(out.name + ".part")
     rc = run(["curl", "-fL", "--retry", "5", "--retry-delay", "2",
-              "--retry-all-errors", "-C", "-", "-o", str(tmp), chosen["url"]]).returncode
+              "--retry-all-errors", "-C", "-", "-o", str(tmp), dl_url]).returncode
     if rc != 0:
         die("Скачивание не удалось (CDN оборвал передачу). Повтори задачу — "
             "докачается с места обрыва (.part сохранён); либо передай локальный путь к видео.")
