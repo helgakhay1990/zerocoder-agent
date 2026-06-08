@@ -231,17 +231,23 @@ def resolve_source(args, work_dir: Path) -> tuple[Path, str]:
         key = Path(src).stem
         return Path(src).resolve(), key
 
-    # Иначе считаем, что это Kinescope video_id
+    # Иначе это Kinescope id или ссылка на Kinescope (https://kinescope.io/<id>)
+    video_id = src
+    if src.startswith("http") or "kinescope.io" in src:
+        from urllib.parse import urlparse
+        path = urlparse(src).path.strip("/")
+        if path:
+            video_id = path.split("/")[-1]
     token = os.environ.get("KINESCOPE_API_TOKEN")
     if not token:
         die(
-            f"Источник '{src}' — не файл. Если это Kinescope id, задай токен:\n"
-            f"   export KINESCOPE_API_TOKEN=...\n"
-            f"   (или передай локальный путь к видео через --source)"
+            f"Источник '{src}' — не локальный файл, а Kinescope (id: {video_id}).\n"
+            f"   Нужен токен: задай KINESCOPE_API_TOKEN в окружении\n"
+            f"   (для бота — строкой в launch-pult/.env), либо передай локальный путь к видео."
         )
-    log(f"🔎 Запрашиваю запись в Kinescope: {src}")
+    log(f"🔎 Запрашиваю запись в Kinescope: {video_id}")
     req = urllib.request.Request(
-        KINESCOPE_API.format(id=src), headers={"Authorization": f"Bearer {token}"}
+        KINESCOPE_API.format(id=video_id), headers={"Authorization": f"Bearer {token}"}
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -260,7 +266,7 @@ def resolve_source(args, work_dir: Path) -> tuple[Path, str]:
         die("В ответе Kinescope нет скачиваемого asset с url.")
     log(f"   качество: {chosen.get('quality')} ({chosen.get('resolution','?')})")
 
-    key = src
+    key = video_id
     out = work_dir / f"{key}_{chosen.get('quality','src')}.mp4"
     if out.exists() and not args.refresh:
         log(f"   кэш: {out.name} (пропускаю скачивание)")
