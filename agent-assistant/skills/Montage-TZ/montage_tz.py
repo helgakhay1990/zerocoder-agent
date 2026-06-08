@@ -272,9 +272,13 @@ def resolve_source(args, work_dir: Path) -> tuple[Path, str]:
         log(f"   кэш: {out.name} (пропускаю скачивание)")
         return out, key
     log("⬇️  Скачиваю запись (это может занять время)...")
-    rc = run(["curl", "-fL", "--retry", "3", "-o", str(out), chosen["url"]]).returncode
+    tmp = out.with_name(out.name + ".part")
+    rc = run(["curl", "-fL", "--retry", "5", "--retry-delay", "2",
+              "--retry-all-errors", "-C", "-", "-o", str(tmp), chosen["url"]]).returncode
     if rc != 0:
-        die("Скачивание не удалось.")
+        die("Скачивание не удалось (CDN оборвал передачу). Повтори задачу — "
+            "докачается с места обрыва (.part сохранён); либо передай локальный путь к видео.")
+    tmp.replace(out)
     return out, key
 
 
