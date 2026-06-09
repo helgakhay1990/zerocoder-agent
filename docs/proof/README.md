@@ -1,15 +1,13 @@
 # Доказательства (скриншоты)
 
-Скриншоты-подтверждения к проекту. Положи сюда PNG (на Mac: `Cmd + Shift + 4` → выдели → перетащи файл в эту папку). Имя файла — как в колонке «файл».
+Скриншоты работающего проекта. Кадры со страниц GitHub сняты с публичного репозитория, терминальные — с реальных прогонов кода.
 
-| # | Что показать на скрине | Файл | Откуда снять |
-|---|---|---|---|
-| 1 | Скиллы агента: `Webinar-Prep` добавлен рядом с `AI-Copywriter` и `Image-Prompt` | `proof-1_skills.png` | `agent-assistant/skills/` в редакторе или на GitHub |
-| 2 | В субагенте `editor` есть раздел «Регистр по проекту» | `proof-2_editor.png` | файл агента `editor` |
-| 3 | Скилл подключён в маршрутизации оркестратора | `proof-3_routing.png` | `agent-assistant/CLAUDE.md`, таблица скиллов |
-| 4 | Папка `references/` наполнена образцами по жанрам | `proof-4_references.png` | `agent-assistant/references/` |
-| 5 | Скилл `Montage-TZ`: полный e2e на реальной записи — собран черновик ТЗ | `proof-5_montage-e2e.png` | терминал прогона / черновик `reports/2026-06-09_efir-e2e_montazh-tz-draft.md` |
-| 6 | Замер «правки 1-й vs 2-й»: таблица из документа замера | `proof-6_run2-metric.png` | `docs/2026-06-09_orchestra-run2-metric_doc.md` |
-| 7 | Telegram-бот: кнопки и фоновая задача ТЗ на монтаж | `proof-7_bot.png` | переписка с ботом в Telegram |
+| # | Файл | Что показывает |
+|---|---|---|
+| 1 | ![](proof-1_montage-e2e.png)<br>`proof-1_montage-e2e.png` | Скилл **Montage-TZ** в работе: запись эфира Kinescope → черновик ТЗ на монтаж за один прогон (скачивание 324 МиБ за 44 c, расшифровка whisper, скан речи). Реальный локальный запуск. |
+| 2 | ![](proof-2_github-repo.png)<br>`proof-2_github-repo.png` | Публичный репозиторий на GitHub: витрина README, список файлов, бейдж Public. |
+| 3 | ![](proof-3_github-skills.png)<br>`proof-3_github-skills.png` | Скиллы опубликованы в репозитории: `AI-Copywriter`, `Image-Prompt`, `Montage-TZ`, `Webinar-Prep`. |
+| 4 | ![](proof-4_metric.png)<br>`proof-4_metric.png` | Замер зрелости «правки 1-й vs 2-й прогон»: ручные правки по языку упали с «всего объёма» до одной. |
+| 5 | ![](proof-5_published.png)<br>`proof-5_published.png` | Публикация через GitHub CLI (`visibility: PUBLIC`), история коммитов, структура оркестра. |
 
-Скрины 1–4 — база (готовы к снятию), 5–7 — сегодняшний прогресс. Минимум для сдачи — 1, 2, 3 + по желанию остальные.
+> Исходники терминальных карточек — в `_src/` (HTML, рендерятся в PNG через headless-браузер).

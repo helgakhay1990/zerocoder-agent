@@ -1,0 +1,32 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;font-family:ui-monospace,Menlo,monospace;padding:30px;color:#c9d1d9}
+.win{max-width:900px;margin:0 auto;background:#0d1117;border:1px solid #30363d;border-radius:10px;overflow:hidden}
+.bar{background:#161b22;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #30363d}
+.dot{width:12px;height:12px;border-radius:50%}.r{background:#ff5f56}.y{background:#ffbd2e}.g{background:#27c93f}
+.title{color:#8b949e;font-size:13px;margin-left:10px}
+.body{padding:18px 20px;font-size:13px;line-height:1.7}
+.p{color:#58a6ff}.c{color:#7ee787}.m{color:#8b949e}.h{color:#d2a8ff}.ok{color:#3fb950}.pub{color:#3fb950;font-weight:700}
+.badge{display:inline-block;background:#238636;color:#fff;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700}
+</style></head><body>
+<div class="win">
+<div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">git log + публикация репозитория</span></div>
+<div class="body">
+<div><span class="p">$</span> <span class="c">git log --oneline -4</span></div>
+<div><span class="h">ae0f5e7</span> knowledge-base — убрана из репозитория (внутренние данные локально)</div>
+<div><span class="h">159f02a</span> README → витрина проекта для сдачи + ДЗ-артефакты 09.06</div>
+<div><span class="h">816f8d0</span> Montage-TZ: скачивание Kinescope без Range + бэкапы в _backups/</div>
+<div><span class="h">0dc7ed6</span> Montage-TZ: скачивание по download_link + диагностика Kinescope</div>
+<br>
+<div><span class="p">$</span> <span class="c">gh repo view helgakhay1990/zerocoder-agent --json visibility</span></div>
+<div>{ "visibility": <span class="pub">"PUBLIC"</span> }&nbsp;&nbsp;<span class="badge">🌐 опубликован через GitHub CLI</span></div>
+<br>
+<div><span class="p">$</span> <span class="c">echo "структура оркестра"</span></div>
+<div class="m">agent-assistant/</div>
+<div>&nbsp;├─ <span class="ok">CLAUDE.md</span> <span class="m">— главный агент-оркестратор (маршрутизация)</span></div>
+<div>&nbsp;├─ .claude/agents/ <span class="m">— 15 субагентов (3 уровня)</span></div>
+<div>&nbsp;├─ <span class="ok">skills/</span> <span class="m">— AI-Copywriter · Image-Prompt · Webinar-Prep · Montage-TZ</span></div>
+<div>&nbsp;└─ checklists/ <span class="m">— чек-листы по 5 жанрам</span></div>
+<div class="m">launch-pult/ — Telegram-бот: трекер запусков + фоновая сборка ТЗ на монтаж</div>
+</div>
+</div></body></html>
