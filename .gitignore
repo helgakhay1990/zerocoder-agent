@@ -27,6 +27,9 @@ screenshots/
 .DS_Store
 tmp/
 .playwright-mcp/
+
+# ── Локальные бэкапы среды (СОДЕРЖАТ СЕКРЕТЫ — никогда в git!) ──
+_backups/
 .learnings/
 
 # Генерируемые из .md документы (пересобираются скриптом .md_to_docx.py)

@@ -118,6 +118,32 @@ def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, **kw)
 
 
+def download_video(url: str, tmp: Path, max_attempts: int = 6) -> None:
+    """Качает url в tmp, повторяя ПОЛНОЕ скачивание на свежем соединении при обрыве.
+
+    Сервер Kinescope (storage/CDN) НЕ поддерживает Range-запросы — докачать с места
+    обрыва нельзя (curl: 33 «doesn't support byte ranges»), `-C -` тут вреден. CDN
+    периодически рвёт соединение (наблюдался обрыв ~200 МиБ); лечится не докачкой, а
+    повтором целиком на новом соединении — иногда окно «чистое» и файл проходит за раз.
+    `--speed-limit/--speed-time` отсекает мёртвый/слишком медленный коннект, чтобы не
+    висеть. Если сеть стабильно рвёт во всех попытках — это среда (РФ↔CDN), не баг:
+    честно сообщаем и предлагаем локальный файл."""
+    for attempt in range(1, max_attempts + 1):
+        if tmp.exists():
+            tmp.unlink()  # без Range продолжить нельзя — только заново
+        rc = run(["curl", "-fL",
+                  "--connect-timeout", "20",
+                  "--speed-limit", "50000", "--speed-time", "30",
+                  "-o", str(tmp), url]).returncode
+        if rc == 0:
+            return
+        got = tmp.stat().st_size // 1048576 if tmp.exists() else 0
+        log(f"   ⚠️ обрыв на {got} МиБ (попытка {attempt}/{max_attempts}), "
+            f"пробую заново на свежем соединении…")
+    die("Скачивание стабильно обрывается — это сеть/CDN (РФ↔Kinescope), не бот. "
+        "Передай локальный путь к видео или повтори задачу позже из другой сети.")
+
+
 def hms(seconds: float) -> str:
     """Секунды → H:MM:SS."""
     seconds = int(round(seconds))
@@ -275,11 +301,7 @@ def resolve_source(args, work_dir: Path) -> tuple[Path, str]:
         return out, key
     log("⬇️  Скачиваю запись (это может занять время)...")
     tmp = out.with_name(out.name + ".part")
-    rc = run(["curl", "-fL", "--retry", "5", "--retry-delay", "2",
-              "--retry-all-errors", "-C", "-", "-o", str(tmp), dl_url]).returncode
-    if rc != 0:
-        die("Скачивание не удалось (CDN оборвал передачу). Повтори задачу — "
-            "докачается с места обрыва (.part сохранён); либо передай локальный путь к видео.")
+    download_video(dl_url, tmp)
     tmp.replace(out)
     return out, key
 
