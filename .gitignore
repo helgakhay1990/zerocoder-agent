@@ -41,6 +41,10 @@ knowledge-base/
 research/
 .learnings/
 
+# Анонсы запусков — коммерческие тексты, остаются локально (как research/)
+announces/
+/2026-06_consultation-razbor_announce.docx
+
 # Генерируемые из .md документы (пересобираются скриптом .md_to_docx.py)
 reports/*.docx
 **/reports/*.docx
