@@ -440,6 +440,81 @@ def ocr_frame(frame: Path, lang: str) -> str:
         return ""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Авто-детект окон шеринга экрана (--windows auto)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# «Слово» для оценки плотности текста на кадре: 2+ буквенно-цифровых подряд.
+_TOKEN_RE = re.compile(r"[A-Za-z0-9]{2,}")
+
+
+def group_dense(scored: list[tuple[float, int]], step: int, min_tokens: int,
+                duration: float, bridge_steps: int = 1, pad: float | None = None
+                ) -> list[tuple[float, float]]:
+    """Из [(timecode_sec, число_токенов), ...] собрать окна «плотного текста».
+
+    Кадр считается экранным, если токенов >= min_tokens. Соседние плотные кадры
+    с разрывом <= (bridge_steps+1)*step склеиваются в одно окно (короткие провалы
+    OCR между кадрами демонстрации не должны рвать окно). Каждое окно расширяется
+    на pad с обеих сторон (по умолчанию step/2 — захватить начало/конец показа,
+    который попал между грубыми кадрами), клампится в [0, duration] и сливается
+    с перекрывающимися. Одиночный плотный кадр (мелькнувшая дата) сохраняется —
+    после паддинга получает ширину. Чистая функция: тестируется без видео."""
+    pad = step / 2 if pad is None else pad
+    dense = [tc for tc, n in scored if n >= min_tokens]
+    if not dense:
+        return []
+    raw: list[list[float]] = [[dense[0], dense[0]]]
+    for tc in dense[1:]:
+        if tc - raw[-1][1] <= step * (bridge_steps + 1):
+            raw[-1][1] = tc
+        else:
+            raw.append([tc, tc])
+    padded = [(max(0.0, s - pad), min(duration, e + pad)) for s, e in raw]
+    padded.sort()
+    merged: list[tuple[float, float]] = []
+    for s, e in padded:
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def detect_windows(video: Path, key: str, args, work_dir: Path) -> list[tuple[float, float]]:
+    """Сам находит окна, где показывали экран (терминал/браузер/IDE/приложение).
+
+    Эвристика — плотность распознаваемого текста: талкинг-хед, заставка, пустой
+    слайд дают мало токенов; шаринг рабочего экрана — много коротких токенов (UI,
+    код, адреса). Грубо семплим кадр раз в `--detect-step` сек (уменьшенный, для
+    скорости), OCR на eng, считаем токены, плотные участки склеиваем в окна.
+    Ограничение: слайд с большим объёмом текста может попасть в окна — это не
+    ошибка, экранный слой только размечает кандидатов, решает человек. Даты на
+    слайдах-нарративе он отфильтрует при сверке."""
+    frames_dir = work_dir / f"{key}_detect"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    log(f"🔍 Авто-детект окон шеринга экрана (кадр раз в {args.detect_step} сек, "
+        f"порог {args.detect_min_tokens} токенов)...")
+    pattern = str(frames_dir / "d_%05d.jpg")
+    run(["ffmpeg", "-i", str(video), "-vf", f"fps=1/{args.detect_step},scale=960:-1",
+         "-q:v", "4", pattern, "-y", "-loglevel", "error"])
+    frames = sorted(frames_dir.glob("d_*.jpg"))
+    scored: list[tuple[float, int]] = []
+    for idx, frame in enumerate(frames):
+        tc = float(idx * args.detect_step)
+        tokens = _TOKEN_RE.findall(ocr_frame(frame, "eng"))
+        scored.append((tc, len(tokens)))
+    windows = group_dense(scored, args.detect_step, args.detect_min_tokens,
+                          probe_duration(video))
+    if windows:
+        log(f"   найдено окон: {len(windows)} — "
+            + ", ".join(f"{hms(s)}–{hms(e)}" for s, e in windows))
+    else:
+        log("   плотного экранного текста не найдено — экранный слой будет пуст. "
+            "Если показ экрана точно был, понизь --detect-min-tokens.")
+    return windows
+
+
 def dedup_hits(hits):
     """Схлопываем одинаковые находки в соседних кадрах в интервал."""
     hits.sort(key=lambda h: (h[1], h[2], h[0]))
@@ -470,7 +545,8 @@ def shorten(text: str, n: int = 90) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args, notes=None) -> None:
+def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args,
+             notes=None, auto_windows=False) -> None:
     notes = notes or []
     d = dt.date.today().isoformat()
     L = []
@@ -480,8 +556,17 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
              "принимает человек, скрипт только размечает кандидатов.\n")
     L.append(f"**Источник:** {src_label}")
     L.append(f"**Длительность:** {hms(duration)}")
+    win_note = ""
+    if not windows:
+        win_note = " — ⚠️ окна не заданы, экранный слой пуст"
+    elif auto_windows:
+        win_note = (" (🔍 найдены авто-детектом по плотности текста — "
+                    "сверь границы и отсей слайды-нарратив)")
     L.append(f"**Окон шеринга экрана отсканировано:** {len(windows)}"
-             + ("" if windows else " — ⚠️ окна не заданы, экранный слой пуст"))
+             + win_note)
+    if windows and auto_windows:
+        L.append("**Окна (авто):** "
+                 + "; ".join(f"{hms(s)}–{hms(e)}" for s, e in windows))
     L.append(f"**Собрано:** {d} · модель whisper `{args.whisper_model}`, OCR `{args.ocr_lang}`\n")
     L.append("---\n")
 
@@ -572,7 +657,14 @@ def main() -> None:
     p.add_argument("--source", required=True, help="Kinescope video_id ИЛИ путь к видеофайлу")
     p.add_argument("--theme", default="efir", help="Тема для имени файла и заголовка")
     p.add_argument("--windows", default="",
-                   help="Окна шеринга экрана: '20m-50m,1h15m-1h40m' (или MM:SS/HH:MM:SS)")
+                   help="Окна шеринга экрана: '20m-50m,1h15m-1h40m' (или MM:SS/HH:MM:SS); "
+                        "'auto' — найти окна автоматически по плотности текста на экране; "
+                        "пусто — экранный слой пропустить")
+    p.add_argument("--detect-step", type=int, default=30,
+                   help="Шаг грубых кадров при авто-детекте окон, сек (дефолт 30)")
+    p.add_argument("--detect-min-tokens", type=int, default=25,
+                   help="Порог токенов на кадр, выше которого кадр считается показом экрана "
+                        "(дефолт 25; ниже — чувствительнее, больше слайдов в выдаче)")
     p.add_argument("--whisper-model", default="base", choices=["base", "small", "medium", "large"],
                    help="Модель whisper (дефолт base — быстро, для слабых машин)")
     p.add_argument("--quality", default="480p", help="Качество скачивания из Kinescope (дефолт 480p)")
@@ -604,10 +696,15 @@ def main() -> None:
     if notes:
         log(f"📌 Заметок автора (высокая уверенность): {len(notes)}")
 
-    windows = parse_windows(args.windows) if args.windows else []
-    if not windows:
+    auto_windows = args.windows.strip().lower() in ("auto", "авто")
+    if auto_windows:
+        windows = detect_windows(video, key, args, work_dir)
+    elif args.windows:
+        windows = parse_windows(args.windows)
+    else:
+        windows = []
         log("⚠️  Окна шеринга экрана не заданы (--windows). Экранный слой (даты/секреты на "
-            "экране) будет пуст. Это главный рычаг скорости — задай окна, где показывали экран.")
+            "экране) будет пуст. Задай окна вручную или '--windows auto' для авто-детекта.")
 
     # Слой 1
     srt = transcribe(video, key, args, work_dir)
@@ -624,7 +721,7 @@ def main() -> None:
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     assemble(out_path, video.name if Path(args.source).exists() else f"Kinescope {args.source}",
-             duration, windows, t_found, v_hits, args, notes)
+             duration, windows, t_found, v_hits, args, notes, auto_windows)
     log(f"\n✅ Черновик ТЗ: {out_path}")
     log("   Дальше: проверка video-edit-assistant → сверка с автором → финал.")
 
