@@ -427,14 +427,18 @@ def scan_windows(video: Path, key: str, windows, args, work_dir: Path) -> list[t
             txt = ocr_frame(frame, args.ocr_lang)
             if not txt:
                 continue
-            # даты на экране. Голый год (RE_YEAR) намеренно НЕ ищем в OCR — после обкатки
-            # 04.06 он шумел (мисриды цифр в таблицах: 2028/2029/2030). Полные даты,
-            # Jun 3 и русское «3 июня 2026» (RE_DATE_RU_MONTH, раз OCR теперь читает rus)
-            # ловятся явно, этого достаточно для блюра.
+            # даты на экране: полные даты, Jun 3 и русское «3 июня 2026»
+            # (RE_DATE_RU_MONTH, раз OCR читает rus) ловятся явно.
             for rx in (RE_DATE_NUMERIC, RE_DATE_EN, RE_DATE_RU_MONTH):
                 for mt in rx.findall(txt):
                     hit = mt if isinstance(mt, str) else " ".join(mt)
                     hits.append((tc, "дата на экране", hit))
+            # Голый год (2023-2039) по умолчанию НЕ ищем — на обкатке 04.06 шумел
+            # (мисриды цифр в таблицах). Включается --ocr-years, когда автор прямо
+            # просит вычистить годы на слайдах; категория помечена как шумная.
+            if args.ocr_years:
+                for mt in RE_YEAR.findall(txt):
+                    hits.append((tc, "год на экране (шумная категория)", mt))
             # секреты
             for label, rx in RE_SECRET:
                 m = rx.search(txt)
@@ -698,6 +702,10 @@ def main() -> None:
     p.add_argument("--ocr-lang", default="rus+eng",
                    help="Язык OCR tesseract (дефолт rus+eng — ловит и русские даты на "
                         "экране, и латиницу/терминал; для чисто-англ. UI можно eng)")
+    p.add_argument("--ocr-years", action="store_true",
+                   help="Искать на экране и голые годы (2023-2039), не только полные "
+                        "даты. Включай, когда автор просит вычистить годы на слайдах — "
+                        "даёт больше шума (мисриды цифр в таблицах), но ловит «2026»/«2030».")
     p.add_argument("--ocr-step", type=int, default=5, help="Шаг OCR-кадров в секундах (дефолт 5)")
     p.add_argument("--frame-step", type=int, default=30, help="Шаг обзорных кадров (дефолт 30)")
     p.add_argument("--out", default="", help="Путь к выходному .md (по умолчанию reports/)")
