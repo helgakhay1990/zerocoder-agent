@@ -83,10 +83,13 @@ RE_OFFER = re.compile(
     re.IGNORECASE,
 )
 
-# Тех. заминки в речи
+# Тех. заминки в речи.
+# «завис» — только формы про зависание системы (завис/зависло/зависает…), НЕ «зависит/
+#   зависимость/независимый»: голый корень давал поток ложных срабатываний (обкатка 22.06).
 RE_GLITCH = re.compile(
     r"(?:не\s+открыва|перезагруз|переподключ|вторая\s+попытк|давайте\s+подожд|"
-    r"завис|не\s+слышно|не\s+видно|пропал\s+звук|техническ|не\s+работает|секунд\w*\s+подожд)",
+    r"\bзавис(?:ло|ла|ли|ает|нет|ают)?\b|не\s+слышно|не\s+видно|пропал\s+звук|"
+    r"техническ|не\s+работает|секунд\w*\s+подожд)",
     re.IGNORECASE,
 )
 
@@ -376,16 +379,24 @@ def parse_srt(srt: Path) -> list[tuple[float, float, str]]:
 
 
 def scan_transcript(segs) -> dict[str, list[tuple[float, str, str]]]:
-    """Категории речевых находок: (timecode_sec, фраза, что нашли)."""
-    found = {"dates": [], "prices": [], "glitches": []}
+    """Категории речевых находок: (timecode_sec, фраза, что нашли).
+
+    Цены разведены на два потока (обкатка 22.06): сильный сигнал оффера
+    (скидка/промокод/акция…) — кандидат на вырезку, реально устаревает; голая
+    сумма в речи без оффера — чаще риторика спикера («заработаешь 100 тыс»),
+    не цена продукта, поэтому уходит в мягкий слой «на усмотрение автора».
+    """
+    found = {"dates": [], "offers": [], "prices": [], "glitches": []}
     for start, _end, text in segs:
         for rx, tag in [(RE_DATE_NUMERIC, "дата"), (RE_DATE_RU_MONTH, "дата"),
                         (RE_REL_TIME, "относит. время"), (RE_YEAR, "год")]:
             for mt in rx.findall(text):
                 hit = mt if isinstance(mt, str) else " ".join(mt)
                 found["dates"].append((start, text, hit))
-        if RE_PRICE.search(text) or RE_OFFER.search(text):
-            found["prices"].append((start, text, "цена/оффер"))
+        if RE_OFFER.search(text):
+            found["offers"].append((start, text, "оффер/дедлайн"))
+        elif RE_PRICE.search(text):
+            found["prices"].append((start, text, "сумма в речи"))
         if RE_GLITCH.search(text):
             found["glitches"].append((start, text, "тех. заминка"))
     return found
@@ -417,9 +428,10 @@ def scan_windows(video: Path, key: str, windows, args, work_dir: Path) -> list[t
             if not txt:
                 continue
             # даты на экране. Голый год (RE_YEAR) намеренно НЕ ищем в OCR — после обкатки
-            # 04.06 он шумел (мисриды цифр в таблицах: 2028/2029/2030). Полные даты и
-            # Jun 3 ловятся RE_DATE_NUMERIC/RE_DATE_EN, этого достаточно для блюра.
-            for rx in (RE_DATE_NUMERIC, RE_DATE_EN):
+            # 04.06 он шумел (мисриды цифр в таблицах: 2028/2029/2030). Полные даты,
+            # Jun 3 и русское «3 июня 2026» (RE_DATE_RU_MONTH, раз OCR теперь читает rus)
+            # ловятся явно, этого достаточно для блюра.
+            for rx in (RE_DATE_NUMERIC, RE_DATE_EN, RE_DATE_RU_MONTH):
                 for mt in rx.findall(txt):
                     hit = mt if isinstance(mt, str) else " ".join(mt)
                     hits.append((tc, "дата на экране", hit))
@@ -596,13 +608,13 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
         L.append("_Находок нет либо окна шеринга не заданы — экранные даты/секреты не отсмотрены._")
     L.append("")
 
-    # 2. Вырезать (речь: заминки + старые цены/офферы)
+    # 2. Вырезать (речь: заминки + офферы/дедлайны — то, что реально устаревает)
     L.append("## Вырезать — кандидаты из речи (слой транскрипта)\n")
     rows = []
     for start, text, _ in t_found["glitches"]:
         rows.append((start, "тех. заминка", text))
-    for start, text, _ in t_found["prices"]:
-        rows.append((start, "цена/оффер в речи", text))
+    for start, text, _ in t_found["offers"]:
+        rows.append((start, "оффер/дедлайн в речи", text))
     if rows:
         rows.sort()
         L.append("| Тайминг | Тип | Фраза | Действие (решает человек) |")
@@ -627,6 +639,20 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
             L.append(f"| {hms(start)} | `{shorten(hit, 30)}` | «{shorten(text)}» |")
     else:
         L.append("_Дат/относительного времени в речи не найдено._")
+    L.append("")
+
+    # 3b. Суммы в речи — мягкий слой (часто риторика «заработаешь N», не цена продукта)
+    L.append("## Суммы в речи (на усмотрение автора)\n")
+    L.append("> Голые суммы без сигнала оффера. Обычно это мотивация спикера "
+             "(«заработаете 200 тыс»), а не цена продукта/тариф — но сверь, не "
+             "проскочила ли реальная цена, которая со временем устареет.\n")
+    if t_found["prices"]:
+        L.append("| Тайминг | Фраза |")
+        L.append("|---|---|")
+        for start, text, _ in sorted(t_found["prices"]):
+            L.append(f"| {hms(start)} | «{shorten(text)}» |")
+    else:
+        L.append("_Сумм в речи не найдено._")
     L.append("")
 
     # 4. Чистка речи — честная граница
@@ -669,7 +695,9 @@ def main() -> None:
                    help="Модель whisper (дефолт base — быстро, для слабых машин)")
     p.add_argument("--quality", default="480p", help="Качество скачивания из Kinescope (дефолт 480p)")
     p.add_argument("--lang", default="ru", help="Язык аудио для whisper (дефолт ru)")
-    p.add_argument("--ocr-lang", default="eng", help="Язык OCR tesseract (дефолт eng; для рус-UI — rus)")
+    p.add_argument("--ocr-lang", default="rus+eng",
+                   help="Язык OCR tesseract (дефолт rus+eng — ловит и русские даты на "
+                        "экране, и латиницу/терминал; для чисто-англ. UI можно eng)")
     p.add_argument("--ocr-step", type=int, default=5, help="Шаг OCR-кадров в секундах (дефолт 5)")
     p.add_argument("--frame-step", type=int, default=30, help="Шаг обзорных кадров (дефолт 30)")
     p.add_argument("--out", default="", help="Путь к выходному .md (по умолчанию reports/)")
@@ -709,7 +737,8 @@ def main() -> None:
     # Слой 1
     srt = transcribe(video, key, args, work_dir)
     t_found = scan_transcript(parse_srt(srt))
-    log(f"   речь: даты={len(t_found['dates'])}, цены/офферы={len(t_found['prices'])}, "
+    log(f"   речь: даты={len(t_found['dates'])}, офферы={len(t_found['offers'])}, "
+        f"суммы={len(t_found['prices'])}, "
         f"заминки={len(t_found['glitches'])}")
 
     # Слой 2
