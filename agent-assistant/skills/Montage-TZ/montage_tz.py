@@ -93,6 +93,21 @@ RE_GLITCH = re.compile(
     re.IGNORECASE,
 )
 
+# Взаимодействие спикера с залом: вопросы к аудитории, переклички, Q&A.
+# Это навигационный слой — помогает найти прогрев в начале и блок вопросов в конце,
+# которые часто режут/двигают на монтаже. Сигналы — обращение к чату, просьба реакций,
+# прямые вопросы залу. «плю\w+» ловит и whisper-мисриды «плюсики»→«плютики».
+RE_INTERACT = re.compile(
+    r"(?:\bв\s+чат\w*|вопрос\w*\s+из\s+чата|"
+    r"поставьте\s+плю\w+|плю[сты]\w*ик\w*|поставьте\s+(?:единичк\w*|нолик|ноль|"
+    r"семёрочк\w*|семерочк\w*|галочк\w*)|"
+    r"как\s+вы\s+думаете|кто\s+из\s+вас|поднимите\s+рук\w*|"
+    r"как\s+меня\s+(?:видно|слышно)|как\s+слышно|слышно\s+ли|видно\s+ли|"
+    r"задавайте\s+вопрос\w*|задайте\s+вопрос\w*|ваши\s+вопрос\w*|давайте\s+вопрос\w*|"
+    r"с\s+какого\s+(?:вы\s+)?города|откуда\s+вы\b|спрашивайте)",
+    re.IGNORECASE,
+)
+
 # Секреты на экране (OCR)
 RE_SECRET = [
     ("Last login", re.compile(r"last\s+login", re.IGNORECASE)),
@@ -392,7 +407,7 @@ def scan_transcript(segs) -> dict[str, list[tuple[float, str, str]]]:
     сумма в речи без оффера — чаще риторика спикера («заработаешь 100 тыс»),
     не цена продукта, поэтому уходит в мягкий слой «на усмотрение автора».
     """
-    found = {"dates": [], "offers": [], "prices": [], "glitches": []}
+    found = {"dates": [], "offers": [], "prices": [], "glitches": [], "interaction": []}
     for start, _end, text in segs:
         for rx, tag in [(RE_DATE_NUMERIC, "дата"), (RE_DATE_RU_MONTH, "дата"),
                         (RE_REL_TIME, "относит. время"), (RE_YEAR, "год")]:
@@ -405,6 +420,8 @@ def scan_transcript(segs) -> dict[str, list[tuple[float, str, str]]]:
             found["prices"].append((start, text, "сумма в речи"))
         if RE_GLITCH.search(text):
             found["glitches"].append((start, text, "тех. заминка"))
+        if RE_INTERACT.search(text):
+            found["interaction"].append((start, text, "взаимодействие с залом"))
     return found
 
 
@@ -606,6 +623,20 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
         L.append("_Автор не указал известных моментов — ниже только авто-находки скрипта._\n")
     L.append("---\n")
 
+    # 0. Взаимодействие с залом (навигация: прогрев в начале, Q&A в конце)
+    L.append("## Взаимодействие с аудиторией (блок вопросов к залу)\n")
+    L.append("> Где спикер работает с залом — задаёт вопросы, просит реакции в чат, "
+             "отвечает на вопросы. Навигационный слой: прогрев в начале и Q&A в конце "
+             "часто двигают/режут. Границы блоков уточни на записи.\n")
+    if t_found["interaction"]:
+        L.append("| Тайминг | Реплика |")
+        L.append("|---|---|")
+        for start, text, _ in sorted(t_found["interaction"]):
+            L.append(f"| {hms(start)} | «{shorten(text)}» |")
+    else:
+        L.append("_Явных сигналов работы с залом не найдено (или их не было в речи)._")
+    L.append("")
+
     # 1. Заблюрить / заменить (экранный слой)
     L.append("## Заблюрить / заменить на экране (слой OCR)\n")
     if v_hits:
@@ -753,7 +784,8 @@ def main() -> None:
     t_found = scan_transcript(parse_srt(srt))
     log(f"   речь: даты={len(t_found['dates'])}, офферы={len(t_found['offers'])}, "
         f"суммы={len(t_found['prices'])}, "
-        f"заминки={len(t_found['glitches'])}")
+        f"заминки={len(t_found['glitches'])}, "
+        f"взаимодействие={len(t_found['interaction'])}")
 
     # Слой 2
     v_hits = scan_windows(video, key, windows, args, work_dir) if windows else []
