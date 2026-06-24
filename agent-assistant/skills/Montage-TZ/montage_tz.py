@@ -240,10 +240,16 @@ def preflight(args) -> None:
         out += run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout or ""
     except Exception:
         out = ""
-    if args.ocr_lang not in out:
+    # --ocr-lang — это 'rus+eng' (несколько языков через '+'); сверяем каждый по
+    # отдельности с установленными, иначе строка 'rus+eng' не найдётся целиком в
+    # списке (там по языку на строку) и предупреждение ложно срабатывает даже когда
+    # оба языка на месте.
+    installed = set(re.findall(r'^[a-z]{3}$', out, re.M))
+    missing = [lng for lng in args.ocr_lang.split("+") if lng and lng not in installed]
+    if missing:
         log(
-            f"⚠️  tesseract: язык '{args.ocr_lang}' не установлен (есть: "
-            f"{', '.join(re.findall(r'^[a-z]{3}$', out, re.M)) or '—'}).\n"
+            f"⚠️  tesseract: не установлен язык(и) {', '.join(missing)} "
+            f"(есть: {', '.join(sorted(installed)) or '—'}).\n"
             f"   Даты/латиница/терминал OCR-ит и на eng. Для русского текста в интерфейсе\n"
             f"   доставь rus: скачай rus.traineddata в папку tessdata (--list-langs покажет путь)."
         )
