@@ -570,12 +570,49 @@ def dedup_hits(hits):
 # Сборка черновика ТЗ
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_map(duration: float) -> str:
-    rows = []
-    t = 0.0
-    while t < duration:
-        rows.append(f"| {hms(t)}–{hms(min(t + 600, duration))} | — (заполнить) |")
-        t += 600
+def cluster_blocks(times, gap: float = 120):
+    """[(start, end, count)] — соседние таймкоды в пределах gap сек считаем одним
+    блоком. Превращает россыпь находок в читаемые блоки «с N по M» (вывод урока
+    24.06: монтажёру нужны границы блока, а не плоский список реплик)."""
+    ts = sorted(times)
+    if not ts:
+        return []
+    blocks = [[ts[0], ts[0], 1]]
+    for t in ts[1:]:
+        if t - blocks[-1][1] <= gap:
+            blocks[-1][1] = t
+            blocks[-1][2] += 1
+        else:
+            blocks.append([t, t, 1])
+    return [(a, b, c) for a, b, c in blocks]
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    """Русское склонение по числу: 1 реплика / 2 реплики / 5 реплик."""
+    nn = abs(n) % 100
+    d = nn % 10
+    if 11 <= nn <= 14 or d == 0 or d >= 5:
+        return many
+    if d == 1:
+        return one
+    return few
+
+
+def build_map(duration: float, windows, t_found) -> str:
+    """Карта-навигация из РЕАЛЬНЫХ якорей (а не пустая сетка): показ экрана,
+    блоки работы с залом, офферы/дедлайны. Тематические подписи — за человеком
+    (video-edit-assistant), но скелет с таймкодами скрипт даёт сам."""
+    anchors = []  # (start, label)
+    for a, b in (windows or []):
+        anchors.append((a, f"🖥 показ экрана {hms(a)}–{hms(b)}"))
+    for a, b, c in cluster_blocks([s for s, _, _ in t_found.get("interaction", [])]):
+        rng = hms(a) if a == b else f"{hms(a)}–{hms(b)}"
+        anchors.append((a, f"🙋 работа с залом {rng} ({c} {_plural(c, 'реплика', 'реплики', 'реплик')})"))
+    for s, _, _ in t_found.get("offers", []):
+        anchors.append((s, f"💰 оффер/дедлайн в речи {hms(s)}"))
+    if not anchors:
+        return "| — | якорей не найдено (нет окон экрана / взаимодействия / офферов) |"
+    rows = [f"| {hms(s)} | {label} |" for s, label in sorted(anchors)]
     return "\n".join(rows)
 
 
@@ -628,11 +665,19 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
     L.append("> Где спикер работает с залом — задаёт вопросы, просит реакции в чат, "
              "отвечает на вопросы. Навигационный слой: прогрев в начале и Q&A в конце "
              "часто двигают/режут. Границы блоков уточни на записи.\n")
-    if t_found["interaction"]:
-        L.append("| Тайминг | Реплика |")
-        L.append("|---|---|")
-        for start, text, _ in sorted(t_found["interaction"]):
-            L.append(f"| {hms(start)} | «{shorten(text)}» |")
+    inter = sorted(t_found["interaction"])
+    if inter:
+        blocks = cluster_blocks([s for s, _, _ in inter])
+        L.append("**Блоки** (соседние реплики ближе 2 мин = один блок — это и есть границы для монтажа):\n")
+        L.append("| Блок | Реплик | Первая реплика блока |")
+        L.append("|---|---|---|")
+        for a, b, c in blocks:
+            rng = hms(a) if a == b else f"{hms(a)}–{hms(b)}"
+            sample = next((shorten(t, 60) for s, t, _ in inter if a <= s <= b), "")
+            L.append(f"| {rng} | {c} | «{sample}» |")
+        L.append("\nВсе реплики по таймкодам:")
+        for start, text, _ in inter:
+            L.append(f"- `{hms(start)}` «{shorten(text)}»")
     else:
         L.append("_Явных сигналов работы с залом не найдено (или их не было в речи)._")
     L.append("")
@@ -702,11 +747,13 @@ def assemble(out_path: Path, src_label, duration, windows, t_found, v_hits, args
              "Автоматически не выявлено. Если нужно — отдельным правилом монтажёру: "
              "«речевой мусор почистить на слух».\n")
 
-    # 5. Карта структуры
-    L.append("## Карта структуры эфира (для навигации)\n")
-    L.append("| Период | Что |")
+    # 5. Карта структуры — якоря из находок (показ экрана / работа с залом / офферы)
+    L.append("## Карта структуры эфира (навигация)\n")
+    L.append("> Якоря из автонаходок. Тематические подписи блоков добавляет человек "
+             "(`video-edit-assistant`) — скелет с таймкодами скрипт даёт сам.\n")
+    L.append("| Тайминг | Якорь |")
     L.append("|---|---|")
-    L.append(build_map(duration))
+    L.append(build_map(duration, windows, t_found))
     L.append("")
 
     out_path.write_text("\n".join(L), encoding="utf-8")
