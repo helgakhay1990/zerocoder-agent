@@ -4,6 +4,10 @@ description: "Captures learnings, errors, and corrections to enable continuous i
 metadata:
 ---
 
+> 🪪 **Паспорт:** сторонний · slug `self-improving-agent`, версия `3.0.21` (опубликована 2026-05-01), пришёл предустановленным.
+> **Источник:** [pskoett/pskoett-ai-skills → skills/self-improvement](https://github.com/pskoett/pskoett-ai-skills/tree/main/skills/self-improvement) · openclaw-вариант: [peterskoett/self-improving-agent](https://github.com/peterskoett/self-improving-agent)
+> **Обновление:** связь не живая. Свежесть — `git ls-remote https://github.com/pskoett/pskoett-ai-skills HEAD`; сравнить версию в апстриме с нашей `3.0.21` (см. `_meta.json`). Новее — перенести руками.
+
 # Self-Improvement Skill
 
 Log learnings and errors to markdown files for continuous improvement. Coding agents can later process these into fixes, and important learnings get promoted to project memory.
