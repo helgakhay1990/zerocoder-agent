@@ -62,3 +62,13 @@ homework-submit/
 # ── Личное / ДЗ: контент-эксперименты, не часть агента ────────
 /2026-06-02_devochka-robot_image*.jpg
 /2026-06_vaybkoding-navigator_concept.*
+
+# launch-orchestrator: внутренний маркетинг + движок — ТОЛЬКО локально, не в публичный репо
+# (тот же режим, что knowledge-base/ и research/). Внутри: секреты Google, .venv,
+# ref-образцы, данные рассылок, логика воронок/тарифов.
+agent-assistant/launch-orchestrator/
+# скиллы запуска — локально (логика воронок/тарифов)
+.claude/skills/zapusk/
+.claude/skills/voronki-dlya-zapuskov/
+.claude/skills/tz-dlya-dizov/
+.claude/skills/tz-dlya-kopirov/
